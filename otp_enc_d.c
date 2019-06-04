@@ -173,10 +173,12 @@ void getKey(int s) {
 void encrpyt() {
 
     // open files
-    FILE *e_file, *k_file, *pt_file;
+    FILE *e_file;
+    FILE *k_file;
+    FILE *pt_file;
     e_file = fopen("encrypted.txt", "w+");
-    k_file = fopen("encrypted.txt", "r+");
-    pt_file = fopen("encrypted.txt", "r+");
+    k_file = fopen("key.txt", "r+");
+    pt_file = fopen("plaintext.txt", "r+");
 
     // ints for storage
     int result, text_char, key_char;
@@ -187,6 +189,7 @@ void encrpyt() {
         key_char = fgetc(k_file);
 
         if (EOF == text_char) { break; }
+        if (text_char == '\n') { continue; }
 
         // check the plain text_char character
         if (text_char == 32) { // space
@@ -204,9 +207,15 @@ void encrpyt() {
             text_char -= 65;
         }
 
-        // calculate the cipher value
+        // calculate the cipher value (A[0] - Z[25] and space[26])
         result = (text_char + key_char) % 27;
-        printf("result: %c\n", result);
+
+        if (result == 26) {
+            result = 32;
+        }
+        else {
+            result += 65;
+        }
 
         fputc(result, e_file);
 
