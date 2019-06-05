@@ -9,7 +9,6 @@
 
 #define     MAX_CHILDREN    10
 
-
 /********************* SETUP *********************/
 void printError(char *msg, int exitValue) {
     if (errno) {
@@ -62,7 +61,7 @@ void setListener(int port, int *listener) {
 
     *listener = tempSock;
 
-    printf("Server open on %d\n", port);
+    //printf("Server open on %d\n", port);
 
 }
 
@@ -71,10 +70,79 @@ void acceptClient(int listenSocket, int *clientSocket) {
     struct sockaddr_storage client_addr;
     int addr_size = sizeof client_addr;
 
+    *clientSocket = -1;
+
     // accept the clients connection
+
     *clientSocket = accept(listenSocket, (struct sockaddr*)&client_addr, &addr_size);
 
-    printf("\nConnecting to client\n");
+    if (*clientSocket == -1) {
+        printError("ACCEPT", 1);
+    }
+
+    //printf("\nConnecting to client\n");
+
+}
+
+
+/****************** FILE HANDLING ****************/
+FILE * openFile(char *name, char *type) {
+    
+    char *tempName = malloc(64 * sizeof(char));
+    char *tempAdr = tempName;
+
+    // clear string
+    memset(tempName, '\0', sizeof tempName);
+
+    // copy in the provided name
+    strcpy(tempName, name);
+
+    // move pointer to the end of current string
+    tempName += strlen(tempName);
+
+    // copy in the pid
+    sprintf(tempName, "%d", getpid());
+
+    // return pointer to head of string
+    tempName = tempAdr;
+
+    // open the file
+    FILE * tmpFile = fopen(tempName, type);
+
+    free(tempName);
+    return tmpFile;
+}
+
+void removeFiles() {
+
+    char names[3][64] = {"encrypted", "plaintext", "key"};
+    char *fullName = malloc(64 * sizeof(char));
+    char *addr = fullName;
+
+    int i;
+    for (i=0; i<3; i++) {
+
+        // clear string
+        memset(fullName, '\0', sizeof fullName);
+        
+        // copy in name
+        strcpy(fullName, names[i]);
+
+        // advance pointer
+        fullName += strlen(fullName);
+
+        // add pid
+        sprintf(fullName, "%d", getpid());
+
+        // return pointer
+        fullName = addr;
+
+        // remove file
+        remove(fullName);
+
+    }
+
+    free(fullName);
 
 }
 
@@ -91,7 +159,7 @@ int validate(int s) {
     // valid client
     if (strcmp(buffer, "otp_enc") == 0) {
         
-        printf("Valid Client\n");
+        //printf("Valid Client\n");
 
         // respond to the client
         //memset(buffer, '\0', sizeof buffer);
@@ -103,9 +171,9 @@ int validate(int s) {
 
     // invalid client
     else {
-        printf("Invalid Client\n");
+        //printf("Invalid Client\n");
         memset(buffer, '\0', sizeof buffer);
-        strcpy("ERROR: Incompatable Server", buffer);
+        strcpy(buffer, "Incompatable Server");
         send(s, buffer, strlen(buffer), 0);
 
         return 0;
@@ -113,7 +181,7 @@ int validate(int s) {
 
 }
 
-void getText(int s) {
+void recvData(int s, char *fileName) {
 
     // setup recv buffer
     char buffer[512];
@@ -121,12 +189,12 @@ void getText(int s) {
 
     // open file to write text into
     FILE * fp;
-    fp = fopen("plaintext.txt", "w+");
+    fp = openFile(fileName, "w+");
 
     recv(s, buffer, sizeof buffer, 0);
 
     // while receiving text, write to file
-    while (strcmp(buffer, "DONE") != 0) {
+    while (!strstr(buffer, ":")) {
 
         fputs(buffer, fp);
         memset(buffer, '\0', sizeof buffer);
@@ -135,50 +203,76 @@ void getText(int s) {
     }
 
     // close the file
-    fclose(fp);    
+    fclose(fp);
 
 }
 
-void getKey(int s) {
+void getData(int s) {
 
-    // let client know were ready for the key
-    char request[64];
-    memset(request, '\0', sizeof request);
-    strcpy(request, "OK");
-    send(s, request, strlen(request), 0);
+    recvData(s, "plaintext");
 
-    // setup recv buffer
-    char buffer[512];
-    memset(buffer, '\0', sizeof buffer);
+    recvData(s, "key"); // NOT WRITING TO FILE
 
-    // open file to write text into
-    FILE * fp;
-    fp = fopen("key.txt", "w+");
+}
 
-    // while receiving text, write to file
-    while (recv(s, buffer, sizeof buffer, 0)) {
+void sendEncrpyt(int s) {
 
-        fputs(buffer, fp);
-        memset(buffer, '\0', sizeof buffer);
+    char line[64];
+    memset(line, '\0', sizeof line);
+    FILE * fp = openFile("encrypted", "r+");
 
+    while (fgets(line, sizeof line, fp)) {
+        send(s, line, strlen(line), 0);
+        memset(line, '\0', sizeof line);
     }
 
-    // close the file
     fclose(fp);
 
 }
 
 
 /************* CHILD PROCESS FUNCTIONS ***********/
+int mod27enc (int text_char, int key_char) {
+
+    if (text_char == '\n') { return -1; }
+
+    // check the plain text_char character
+    if (text_char == 32) { // space
+        text_char = 26;
+    }
+    else { // capital
+        text_char -= 65;
+    }
+
+    // check the key_char character
+    if (key_char == 32) { // space
+        key_char = 26;
+    }
+    else { // capital
+        text_char -= 65;
+    }
+
+    // calculate the cipher value (A[0] - Z[25] and space[26])
+    int result = (text_char + key_char) % 27;
+
+    if (result == 26) {
+        result = 32;
+    }
+    else {
+        result += 65;
+    }
+
+    return result;
+
+}
+
 void encrpyt() {
 
     // open files
-    FILE *e_file;
-    FILE *k_file;
-    FILE *pt_file;
-    e_file = fopen("encrypted.txt", "w+");
-    k_file = fopen("key.txt", "r+");
-    pt_file = fopen("plaintext.txt", "r+");
+    FILE *e_file, *k_file, *pt_file;
+    e_file = openFile("encrypted", "w+");
+    k_file = openFile("key", "r+");
+    pt_file = openFile("plaintext", "r+");
 
     // ints for storage
     int result, text_char, key_char;
@@ -189,35 +283,16 @@ void encrpyt() {
         key_char = fgetc(k_file);
 
         if (EOF == text_char) { break; }
-        if (text_char == '\n') { continue; }
+        
+        // calculates new value
+        result = mod27enc(text_char, key_char);
 
-        // check the plain text_char character
-        if (text_char == 32) { // space
-            text_char = 26;
-        }
-        else { // capital
-            text_char -= 65;
-        }
-
-        // check the key_char character
-        if (key_char == 32) { // space
-            key_char = 26;
-        }
-        else { // capital
-            text_char -= 65;
-        }
-
-        // calculate the cipher value (A[0] - Z[25] and space[26])
-        result = (text_char + key_char) % 27;
-
-        if (result == 26) {
-            result = 32;
+        if (result < 0) {
+            continue;
         }
         else {
-            result += 65;
+            fputc(result, e_file);
         }
-
-        fputc(result, e_file);
 
     } while (1);
 
@@ -227,25 +302,16 @@ void encrpyt() {
 
 }
 
-void removeFiles() {
-
-    remove("plaintext.txt");
-    remove("key.txt");
-
-}
-
 void childProcess(int s) {
          
     // validate client
     if(validate(s)) {
-        
-        getText(s);
 
-        getKey(s);
+        getData(s);
 
         encrpyt();
 
-        // sendEncrpyt();
+        sendEncrpyt(s);
 
         removeFiles();
 
@@ -269,7 +335,7 @@ void removeChild(int pid, int *array) {
 
 }
 
-void addChild(int pid, int *array) {
+void addChild(int pid, int array[MAX_CHILDREN]) {
 
     int i, flag = 0;
 
@@ -283,7 +349,7 @@ void addChild(int pid, int *array) {
 
 }
 
-void waitChildren(int *array) {
+void waitChildren(int array[MAX_CHILDREN]) {
     
     int i, status;
     int finishedPID;
@@ -296,7 +362,7 @@ void waitChildren(int *array) {
 
         // nonzero means process completed
         if (finishedPID != 0) {
-            array[i] = 0;
+            array[i] = 0; //
         }
 
         // check if current slot is occupied
@@ -317,7 +383,7 @@ void waitChildren(int *array) {
 
 }
 
-void forkProcess(int *activeChildren, int clientSocket) {
+void forkProcess(int activeChildren[MAX_CHILDREN], int clientSocket) {
 
     int childPID;
     int numberOfChildren;
@@ -338,19 +404,18 @@ void forkProcess(int *activeChildren, int clientSocket) {
         
         case 0: // child
 
-            // add child to list of children
-            addChild(childPID, activeChildren);
-
             // perform the child process
             childProcess(clientSocket);
             
-            printf("Child closing\n");
+            //printf("Child closing\n");
             exit(0);
             break;
 
         default: // parent
-            // do nothing
-            // don't block
+            
+            // add child to list of children
+            addChild(childPID, activeChildren);
+
             break;
     }
 
@@ -359,14 +424,6 @@ void forkProcess(int *activeChildren, int clientSocket) {
 
 
 
-/*
-        Child
-        1. check and make sure it si communicating with otp_enc
-        2. recv plaintext and key
-        3. encode plaintext
-        4. send encoded text back
-
-    */
 
 
 int main(int argc, char **argv) {
@@ -374,7 +431,7 @@ int main(int argc, char **argv) {
     int listenPort;
     int listenSocket;
     int clientSocket;
-    int activeChildren[5] = {0};
+    int activeChildren[MAX_CHILDREN] = {0};
 
     // parse CLA for the port to listen to
     parseCLA(argv, &listenPort);
@@ -390,9 +447,6 @@ int main(int argc, char **argv) {
 
         // fork the child
         forkProcess(activeChildren, clientSocket);
-
-        // REMOVE
-        getchar();
 
     }
 
