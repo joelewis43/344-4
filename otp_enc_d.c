@@ -155,6 +155,17 @@ void removeFiles() {
 }
 
 
+/**************** HELPER FUNCTIONS ***************/
+void removeColon(char *buffer) {
+
+    // the colon will be the last character
+    // replace it with null terminator
+    buffer[strlen(buffer)-1] = '\0';
+
+
+}
+
+
 /************** SOCKET COMMUNICATION *************/
 int validate(int s) {
 
@@ -202,7 +213,7 @@ void recvData(int s, char *fileName) {
     send(s, "OK", 2, 0);
 
     // start receiving file
-    recv(s, buffer, sizeof buffer, 0);
+    recv(s, buffer, sizeof buffer-1, 0);
 
     // keep receiving until we hit :
     while (!strstr(buffer, ":")) {
@@ -212,8 +223,14 @@ void recvData(int s, char *fileName) {
 
         // recv next message
         memset(buffer, '\0', sizeof buffer);
-        recv(s, buffer, sizeof buffer, 0);
+        recv(s, buffer, sizeof buffer-1, 0);
 
+    }
+
+    // there is text still in the buffer
+    if (strcmp(buffer, ":") != 0) {
+        removeColon(buffer);
+        fputs(buffer, fp);
     }
 
     // close the file
@@ -235,6 +252,9 @@ void sendEncrpyt(int s) {
         memset(line, '\0', sizeof line);
     }
 
+    // send seperator
+    send(s, ":", 1, 0);
+
     fclose(fp);
 
 }
@@ -247,7 +267,7 @@ int mod27enc (int text_char, int key_char) {
     if (text_char == 32) { // space
         text_char = 26;
     }
-    else { // capital
+    else {
         text_char -= 65;
     }
 

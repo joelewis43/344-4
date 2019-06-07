@@ -154,6 +154,17 @@ void removeFiles() {
 }
 
 
+/**************** HELPER FUNCTIONS ***************/
+void removeColon(char *buffer) {
+
+    // the colon will be the last character
+    // replace it with null terminator
+    buffer[strlen(buffer)-1] = '\0';
+
+
+}
+
+
 /************** SOCKET COMMUNICATION *************/
 int validate(int s) {
 
@@ -215,6 +226,12 @@ void recvData(int s, char *fileName) {
 
     }
 
+    // there is text still in the buffer
+    if (strcmp(buffer, ":") != 0) {
+        removeColon(buffer);
+        fputs(buffer, fp);
+    }
+
     // close the file
     fclose(fp);
 
@@ -233,6 +250,9 @@ void sendDecrpyt(int s) {
         send(s, line, strlen(line), 0);
         memset(line, '\0', sizeof line);
     }
+
+    // send seperator
+    send(s, ":", 1, 0);
 
     fclose(fp);
 
@@ -273,8 +293,6 @@ int mod27dec (int text_char, int key_char) {
     else {
         result += 65;
     }
-
-    printf("Text: %d\tResult: %c\n", text_char, result);
 
     return result;
 

@@ -158,6 +158,17 @@ int validate(int s) {
 }
 
 
+/**************** HELPER FUNCTIONS ***************/
+void removeColon(char *buffer) {
+
+    // the colon will be the last character
+    // replace it with null terminator
+    buffer[strlen(buffer)-1] = '\0';
+
+
+}
+
+
 /****************** COMMUNICATION ****************/
 void sendFile(char *fileName, int s) {
 
@@ -217,10 +228,27 @@ void recvData(int s) {
     memset(buffer, '\0', sizeof buffer);
 
     // recv decryption
-    recv(s, buffer, sizeof buffer, 0);
+    recv(s, buffer, sizeof buffer-1, 0);
 
-    // output decrypted data to STDOUT
-    printf("%s\n", buffer);
+    while (!strstr(buffer, ":")) {
+
+        // write to STDOUT
+        printf("%s", buffer);
+
+        // recv next message
+        memset(buffer, '\0', sizeof buffer);
+        recv(s, buffer, sizeof buffer-1, 0);
+
+    }
+
+    // there is still text in the buffer
+    if (strcmp(buffer, ":") != 0) {
+        removeColon(buffer);
+        printf("%s\n", buffer);
+    }
+    else {
+        printf("\n");
+    }
 
 }
 
