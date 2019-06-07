@@ -8,8 +8,8 @@
 #include    <netdb.h>
 
 #define     MAX_CHILDREN    10
-#define     CLIENT_AUTH     "otp_enc"
-#define     SERVER_AUTH     "otp_enc_d"
+#define     CLIENT_AUTH     "otp_dec"
+#define     SERVER_AUTH     "otp_dec_d"
 
 /********************* SETUP *********************/
 void printError(char *msg, int exitValue) {
@@ -73,7 +73,6 @@ int acceptClient(int listenSocket, int *clientSocket) {
     *clientSocket = -1;
 
     // accept the clients connection
-
     *clientSocket = accept(listenSocket, (struct sockaddr*)&client_addr, &addr_size);
 
     // error accepting client
@@ -123,7 +122,7 @@ FILE * openFile(char *name, char *type) {
 
 void removeFiles() {
 
-    char names[3][64] = {"encrypted", "plaintext", "key"};
+    char names[3][64] = {"decrypted", "plaintext", "key"};
     char *fullName = malloc(64 * sizeof(char));
     char *addr = fullName;
 
@@ -221,14 +220,14 @@ void recvData(int s, char *fileName) {
 
 }
 
-void sendEncrpyt(int s) {
+void sendDecrpyt(int s) {
 
     // setup send buffer
     char line[64];
     memset(line, '\0', sizeof line);
 
     // open file to read from
-    FILE * fp = openFile("encrypted", "r+");
+    FILE * fp = openFile("decrypted", "r+");
 
     while (fgets(line, sizeof line, fp)) {
         send(s, line, strlen(line), 0);
@@ -241,7 +240,7 @@ void sendEncrpyt(int s) {
 
 
 /************* CHILD PROCESS FUNCTIONS ***********/
-int mod27enc (int text_char, int key_char) {
+int mod27dec (int text_char, int key_char) {
 
     // check the plain text characted
     if (text_char == 32) { // space
@@ -260,7 +259,12 @@ int mod27enc (int text_char, int key_char) {
     }
 
     // calculate the cipher value (A[0] - Z[25] and space[26])
-    int result = (text_char + key_char) % 27;
+    int result = (text_char - key_char) % 27;
+
+    // check for negative result
+    if (result < 0) {
+        result += 27;
+    }
 
     // convert from 0-26 back to ascii
     if (result == 26) {
@@ -270,15 +274,17 @@ int mod27enc (int text_char, int key_char) {
         result += 65;
     }
 
+    printf("Text: %d\tResult: %c\n", text_char, result);
+
     return result;
 
 }
 
-void encrpyt() {
+void decrpyt() {
 
     // open files
-    FILE *e_file, *k_file, *pt_file;
-    e_file = openFile("encrypted", "w+");
+    FILE *de_file, *k_file, *pt_file;
+    de_file = openFile("decrypted", "w+");
     k_file = openFile("key", "r+");
     pt_file = openFile("plaintext", "r+");
 
@@ -299,15 +305,15 @@ void encrpyt() {
         else if (text_char == 10) { continue; }
         
         // calculates new value
-        result = mod27enc(text_char, key_char);
+        result = mod27dec(text_char, key_char);
 
         // write to file
-        fputc(result, e_file);
+        fputc(result, de_file);
 
     } while (1);
 
     // close the files
-    fclose(e_file);
+    fclose(de_file);
     fclose(k_file);
     fclose(pt_file);
 
@@ -324,11 +330,11 @@ void childProcess(int s) {
         // receive key file
         recvData(s, "key");
 
-        // encrypt the plain text
-        encrpyt();
+        // decrypt the plain text
+        decrpyt();
 
-        // send the encrypted text to the client
-        sendEncrpyt(s);
+        // send the decrypted text to the client
+        sendDecrpyt(s);
 
         // clean up temp files
         removeFiles();

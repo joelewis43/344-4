@@ -7,15 +7,8 @@
 #include    <unistd.h>
 #include    <netdb.h>
 
-
-
-/*
-    1. parse CLA
-
-
-
-*/
-
+#define     CLIENT_AUTH     "otp_enc"
+#define     SERVER_AUTH     "otp_enc_d"
 
 
 /**************** ERROR HANDLING *****************/
@@ -70,7 +63,6 @@ void checkCharacter(int c) {
         // ignore?
     }
     else {
-        printf("CHARACTER: %d\n", c);
         printError("Bad character", 1);
     }
 
@@ -95,6 +87,7 @@ int fileLength(char *name) {
         len++;                  // increment length
     }
 
+    // close file
     fclose(tmp);
 
     return len;
@@ -103,9 +96,11 @@ int fileLength(char *name) {
 
 void validateFiles(char *textFileName, char* keyFileName) {
 
+    // get the file lengths
     int textCount = fileLength(textFileName);
     int keyCount = fileLength(keyFileName);
 
+    // make sure the plain text file is longer
     if (textCount > keyCount) {
         printError("Key too short", 1);
     }
@@ -136,25 +131,29 @@ void connectSocket(int *s, int p) {
     if (connect(*s, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
         printError("CONNECT", 1);
 
-    printf("Connected!\n");
-
 }
 
-void validate(int s) {
+int validate(int s) {
 
-    // setup send/recv buffer
+    // setup buffer
     char buffer[64];
     memset(buffer, '\0', sizeof buffer);
 
     // send validation message
-    strcpy(buffer, "otp_enc");
+    strcpy(buffer, CLIENT_AUTH);
     send(s, buffer, strlen(buffer), 0);
 
     // wait for server response
     recv(s, buffer, sizeof buffer, 0);
 
-    if (strcmp(buffer, "otp_enc_d") != 0)
-        printError(buffer, 1);
+    // server responded with error
+    if (strcmp(buffer, SERVER_AUTH) != 0) {
+
+        return 0;
+
+    }
+
+    return 1;
 
 }
 
@@ -162,12 +161,15 @@ void validate(int s) {
 /****************** COMMUNICATION ****************/
 void sendFile(char *fileName, int s) {
 
-    FILE * tmp;
+    // set up buffer
     char buffer[256];
+
+    // wait for server to send ready message
+    recv(s, buffer, sizeof buffer, 0);
     memset(buffer, '\0', sizeof buffer);
 
-    // open text file and send its data
-    tmp = fopen(fileName, "r+");
+    // open file
+    FILE * tmp = fopen(fileName, "r+");
 
     // loop over file, sending each line
     while (fgets(buffer, sizeof buffer, tmp)) {
@@ -181,18 +183,44 @@ void sendFile(char *fileName, int s) {
     // send seperator
     send(s, ":", 1, 0);
 
-    // brief pause to ensure server has time to process
-    sleep(0.1);
-
 }
 
 void sendData(char *textFileName, char* keyFileName, int s) {
 
-    validate(s);
+    // validate the server we are talking to
+    if(validate(s)) {
+        
+        // send the plain text file
+        sendFile(textFileName, s);
 
-    sendFile(textFileName, s);
+        // send the key file
+        sendFile(keyFileName, s);
 
-    sendFile(keyFileName, s);
+    }
+
+    // validation fialed
+    else {
+
+        // close socket
+        close(s);
+
+        // report to STDERR
+        printError("Invalid Server!", 2);
+    }
+
+}
+
+void recvData(int s) {
+
+    // setup recv buffer
+    char buffer[256];
+    memset(buffer, '\0', sizeof buffer);
+
+    // recv encryption
+    recv(s, buffer, sizeof buffer, 0);
+
+    // output encrypted data to STDOUT
+    printf("%s\n", buffer);
 
 }
 
@@ -219,7 +247,9 @@ int main(int argc, char **argv) {
     // send the text and key files to the server
     sendData(textFileName, keyFileName, socket);
 
-    getchar();
+    // recv the encrypted text
+    recvData(socket);
+
     // close the socket
     close(socket);
 
